@@ -1,0 +1,10 @@
+CREATE TABLE Users(
+	id_user INTEGER PRIMARY KEY,
+	first_name VARCHAR(50) NOT NULL,
+	last_name VARCHAR(50) NOT NULL,
+	email VARCHAR(100) NOT NULL UNIQUE,
+	salt VARCHAR(32) NOT NULL,
+	hash VARCHAR(128) NOT NULL,
+	two_fa_key VARCHAR(255),
+	two_fa_uri VARCHAR(255)
+);
