@@ -8,3 +8,10 @@ CREATE TABLE Users(
 	two_fa_key VARCHAR(255),
 	two_fa_uri VARCHAR(255)
 );
+
+CREATE TABLE JwtUsers (
+	id INTEGER PRIMARY KEY,
+	name VARCHAR(50) NOT NULL,
+	salt VARCHAR(32) NOT NULL,
+	hash VARCHAR(128) NOT NULL,
+);

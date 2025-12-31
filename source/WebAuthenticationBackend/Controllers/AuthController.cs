@@ -1,5 +1,10 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 using System.Text.RegularExpressions;
 using WebAuthenticationBackend.Data;
 using WebAuthenticationBackend.Models;
@@ -20,8 +25,80 @@ namespace WebAuthenticationBackend.Controllers
             _config = config;
         }
 
+        [HttpGet("jwt_user/{id}")]
+        public async Task<IActionResult> GetJwtUserByIdAsync(int id)
+        {
+            var user = await _context.JwtUsers.FindAsync(id);
+            if (user == null)
+                return NotFound();
+
+            return Ok(user);
+        }
+
+        [HttpPost("jwt_user")]
+        public async Task<IActionResult> CreateUserAsync(
+            [FromBody] CreateJwtUserRequest request)
+        {
+            var normalizedName = request.Name.Trim().ToLower();
+
+
+            var existingJwtUser = await _context.JwtUsers
+                .FirstOrDefaultAsync(u => u.Name == normalizedName);
+
+            if (existingJwtUser != null)
+                return BadRequest("Name already in use.");
+
+            var salt = HashingService.GenerateSalt();
+            var hash = HashingService.ComputeHash(request.Password, salt);
+
+            var newJwtUser = new JwtUser
+            {
+                Name = normalizedName,
+                Salt = salt,
+                Hash = hash,
+            };
+
+            newJwtUser.Id = newJwtUser.GenerateUniqueId(_context);
+
+            _context.JwtUsers.Add(newJwtUser);
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                return Conflict("Name already in use.");
+            }
+            return CreatedAtAction(
+                nameof(GetJwtUserByIdAsync),
+                new { id = newJwtUser.Id },
+                new { newJwtUser.Id, newJwtUser.Name }
+            );
+        }
+
+        [HttpPost("get_jwt")]
+        public async Task<IActionResult> GetJwtAsync(
+            [FromBody] GetJwt request)
+        {
+            var normalizedName = request.Name.Trim().ToLower();
+            var jwtUser = await _context.JwtUsers.
+                FirstOrDefaultAsync(jwt => jwt.Name == normalizedName);
+
+            if (jwtUser != null) { 
+                var hash = HashingService.ComputeHash(request.Password,
+                    jwtUser.Salt);
+                if (normalizedName == jwtUser.Name && hash == jwtUser.Hash)
+                {
+                    var token = GenerateJwt(normalizedName);
+                    return Ok(new { token });
+                }
+            }
+            return Unauthorized();
+        }
+
+        [Authorize]
         [HttpGet("user/{id}")]
-        public async Task<IActionResult> GetUserById(int id)
+        public async Task<IActionResult> GetUserByIdAsync(int id)
         {
             var user = await _context.Users.FindAsync(id);
             if (user == null)
@@ -30,8 +107,9 @@ namespace WebAuthenticationBackend.Controllers
             return Ok(user);
         }
 
+        [Authorize]
         [HttpGet("users")]
-        public async Task<IActionResult> GetAllUser()
+        public async Task<IActionResult> GetAllUserAsync()
         {
             var users = await _context.Users
                 .Select(u => new
@@ -47,8 +125,9 @@ namespace WebAuthenticationBackend.Controllers
             return Ok(users);
         }
 
+        [Authorize]
         [HttpPost("user")]
-        public async Task<IActionResult> CreateUser(
+        public async Task<IActionResult> CreateUserAsync(
             [FromBody] CreateUserRequest request)
         {
             var normalizedEmail = request.Email.Trim().ToLower();
@@ -90,14 +169,16 @@ namespace WebAuthenticationBackend.Controllers
                 return Conflict("Email already in use.");
             }
             return CreatedAtAction(
-                nameof(GetUserById),
+                nameof(GetUserByIdAsync),
+                nameof(GetUserByIdAsync),
                 new { id = newUser.Id },
                 new { newUser.Id, newUser.Email }
             );
         }
 
+        [Authorize]
         [HttpPatch("user/{id}")]
-        public async Task<IActionResult> UpdateUserById(int id,
+        public async Task<IActionResult> UpdateUserByIdAsync(int id,
             [FromBody] UpdateUserRequest request)
         {
             var user = await _context.Users.FindAsync(id);
@@ -126,8 +207,9 @@ namespace WebAuthenticationBackend.Controllers
             return Ok(user);
         }
 
+        [Authorize]
         [HttpDelete("user/{id}")]
-        public async Task<IActionResult> DeleteUserById(int id)
+        public async Task<IActionResult> DeleteUserByIdAsync(int id)
         {
             var user = await _context.Users.FirstOrDefaultAsync(
                 u => u.Id == id);
@@ -138,8 +220,9 @@ namespace WebAuthenticationBackend.Controllers
             return NoContent();
         }
 
+        [Authorize]
         [HttpPost("login")]
-        public async Task<IActionResult> Login(
+        public async Task<IActionResult> LoginAsync(
             [FromBody] LoginRequest request)
         {
             var user = await _context.Users
@@ -151,6 +234,24 @@ namespace WebAuthenticationBackend.Controllers
                 return Unauthorized("Invalid email or password.");
 
             return Ok("Login successful.");
+        }
+
+        private string GenerateJwt(string username)
+        {
+            var key = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
+            var creds = new SigningCredentials(
+                key, SecurityAlgorithms.HmacSha256);
+
+            var token = new JwtSecurityToken(
+                issuer: _config["Jwt:Issuer"]!,
+                audience: _config["Jwt:Audiance"]!,
+                claims: new[] { new Claim(ClaimTypes.Name, username) },
+                expires: DateTime.Now.AddMinutes(
+                    Convert.ToDouble(_config["Jwt:ExpireMinutes"]!)),
+                signingCredentials: creds);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
         }
     }
 }

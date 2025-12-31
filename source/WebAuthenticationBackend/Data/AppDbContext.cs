@@ -10,10 +10,12 @@ namespace WebAuthenticationBackend.Data
         }
 
         public DbSet<User> Users { get; set; }
+        public DbSet<JwtUser> JwtUsers { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<User>().HasKey(u => u.Id);
+            modelBuilder.Entity<JwtUser>().HasKey(jwt => jwt.Id);
         }
     }
 }
