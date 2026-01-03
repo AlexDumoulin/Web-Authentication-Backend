@@ -40,6 +40,19 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Allow react app to send requests
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("MyAllowSpecificOrigins",
+        policy =>
+        {
+            policy.WithOrigins("http://localhost:5173") // Your React URL
+                  .AllowAnyHeader()
+                  .AllowAnyMethod()
+                  .AllowCredentials(); // Required because you use withCredentials: true
+        });
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -47,6 +60,8 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+app.UseCors("MyAllowSpecificOrigins");
 
 app.UseHttpsRedirection();
 app.UseAuthentication();

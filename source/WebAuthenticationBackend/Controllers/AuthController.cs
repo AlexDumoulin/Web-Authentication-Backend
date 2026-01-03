@@ -96,7 +96,7 @@ namespace WebAuthenticationBackend.Controllers
             return Unauthorized();
         }
 
-        [Authorize]
+        //[Authorize]
         [HttpGet("user/{id}")]
         public async Task<IActionResult> GetUserByIdAsync(int id)
         {
@@ -107,7 +107,7 @@ namespace WebAuthenticationBackend.Controllers
             return Ok(user);
         }
 
-        [Authorize]
+        //[Authorize]
         [HttpGet("users")]
         public async Task<IActionResult> GetAllUserAsync()
         {
@@ -125,7 +125,7 @@ namespace WebAuthenticationBackend.Controllers
             return Ok(users);
         }
 
-        [Authorize]
+        //[Authorize]
         [HttpPost("user")]
         public async Task<IActionResult> CreateUserAsync(
             [FromBody] CreateUserRequest request)
@@ -168,15 +168,10 @@ namespace WebAuthenticationBackend.Controllers
             {
                 return Conflict("Email already in use.");
             }
-            return CreatedAtAction(
-                nameof(GetUserByIdAsync),
-                nameof(GetUserByIdAsync),
-                new { id = newUser.Id },
-                new { newUser.Id, newUser.Email }
-            );
+            return StatusCode(201, new { newUser.Id, newUser.Email });
         }
 
-        [Authorize]
+        //[Authorize]
         [HttpPatch("user/{id}")]
         public async Task<IActionResult> UpdateUserByIdAsync(int id,
             [FromBody] UpdateUserRequest request)
@@ -207,7 +202,7 @@ namespace WebAuthenticationBackend.Controllers
             return Ok(user);
         }
 
-        [Authorize]
+        //[Authorize]
         [HttpDelete("user/{id}")]
         public async Task<IActionResult> DeleteUserByIdAsync(int id)
         {
@@ -220,7 +215,7 @@ namespace WebAuthenticationBackend.Controllers
             return NoContent();
         }
 
-        [Authorize]
+        //[Authorize]
         [HttpPost("login")]
         public async Task<IActionResult> LoginAsync(
             [FromBody] LoginRequest request)
