@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { faCheck, faTimes, faInfoCircle } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import axios from './api/axios';
+import { Link } from 'react-router-dom';
 
 const PWD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%]).{8,24}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -106,10 +107,12 @@ const Register = () => {
         <section>
             {success ? (
                 <div className="success-container">
-                    <h1>Success!</h1>
-                    <p>Your account has been created.</p>
-                    <p><a href="#">Sign In</a></p>
-                </div>
+    <h1>Success!</h1>
+    <p>Your account has been created.</p>
+    <p>
+        <Link to="/login">Sign In</Link>
+    </p>
+</div>
             ) : (
                 <>
                     <p ref={errRef} className={errMsg ? "errmsg" : "offscreen"} aria-live="assertive">{errMsg}</p>

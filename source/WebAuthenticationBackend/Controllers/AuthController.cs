@@ -217,33 +217,53 @@ namespace WebAuthenticationBackend.Controllers
 
         //[Authorize]
         [HttpPost("login")]
-        public async Task<IActionResult> LoginAsync(
-            [FromBody] LoginRequest request)
+        public async Task<IActionResult> LoginAsync([FromBody] LoginRequest request)
         {
             var user = await _context.Users
                 .FirstOrDefaultAsync(u => u.Email == request.Email);
+
             if (user == null)
                 return Unauthorized("Invalid email or password.");
+
             var hash = HashingService.ComputeHash(request.Password, user.Salt);
             if (hash != user.Hash)
                 return Unauthorized("Invalid email or password.");
 
-            return Ok("Login successful.");
+            // Generate the token using your updated method
+            var token = GenerateJwt(user.Email);
+
+            // Return a JSON object so React can read 'accessToken'
+            return Ok(new
+            {
+                accessToken = token,
+                email = user.Email
+            });
         }
 
-        private string GenerateJwt(string username)
+        private string GenerateJwt(string email)
         {
+            // Use the exact key from your appsettings.json
             var key = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
+
             var creds = new SigningCredentials(
                 key, SecurityAlgorithms.HmacSha256);
 
+            // Create claims - using Email as the Name identifier is common
+            var claims = new[]
+            {
+        new Claim(ClaimTypes.Name, email),
+        new Claim(ClaimTypes.Email, email),
+        new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+    };
+
             var token = new JwtSecurityToken(
                 issuer: _config["Jwt:Issuer"]!,
+                // Ensure this matches the "Audiance" spelling in your Program.cs
                 audience: _config["Jwt:Audiance"]!,
-                claims: new[] { new Claim(ClaimTypes.Name, username) },
-                expires: DateTime.Now.AddMinutes(
-                    Convert.ToDouble(_config["Jwt:ExpireMinutes"]!)),
+                claims: claims,
+                expires: DateTime.UtcNow.AddMinutes(
+                    Convert.ToDouble(_config["Jwt:ExpireMinutes"] ?? "60")),
                 signingCredentials: creds);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
