@@ -25,77 +25,6 @@ namespace WebAuthenticationBackend.Controllers
             _config = config;
         }
 
-        [HttpGet("jwt_user/{id}")]
-        public async Task<IActionResult> GetJwtUserByIdAsync(int id)
-        {
-            var user = await _context.JwtUsers.FindAsync(id);
-            if (user == null)
-                return NotFound();
-
-            return Ok(user);
-        }
-
-        [HttpPost("jwt_user")]
-        public async Task<IActionResult> CreateUserAsync(
-            [FromBody] CreateJwtUserRequest request)
-        {
-            var normalizedName = request.Name.Trim().ToLower();
-
-
-            var existingJwtUser = await _context.JwtUsers
-                .FirstOrDefaultAsync(u => u.Name == normalizedName);
-
-            if (existingJwtUser != null)
-                return BadRequest("Name already in use.");
-
-            var salt = HashingService.GenerateSalt();
-            var hash = HashingService.ComputeHash(request.Password, salt);
-
-            var newJwtUser = new JwtUser
-            {
-                Name = normalizedName,
-                Salt = salt,
-                Hash = hash,
-            };
-
-            newJwtUser.Id = newJwtUser.GenerateUniqueId(_context);
-
-            _context.JwtUsers.Add(newJwtUser);
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateException)
-            {
-                return Conflict("Name already in use.");
-            }
-            return CreatedAtAction(
-                nameof(GetJwtUserByIdAsync),
-                new { id = newJwtUser.Id },
-                new { newJwtUser.Id, newJwtUser.Name }
-            );
-        }
-
-        [HttpPost("get_jwt")]
-        public async Task<IActionResult> GetJwtAsync(
-            [FromBody] GetJwt request)
-        {
-            var normalizedName = request.Name.Trim().ToLower();
-            var jwtUser = await _context.JwtUsers.
-                FirstOrDefaultAsync(jwt => jwt.Name == normalizedName);
-
-            if (jwtUser != null) { 
-                var hash = HashingService.ComputeHash(request.Password,
-                    jwtUser.Salt);
-                if (normalizedName == jwtUser.Name && hash == jwtUser.Hash)
-                {
-                    var token = GenerateJwt(normalizedName);
-                    return Ok(new { token });
-                }
-            }
-            return Unauthorized();
-        }
-
         //[Authorize]
         [HttpGet("user/{id}")]
         public async Task<IActionResult> GetUserByIdAsync(int id)
@@ -217,27 +146,52 @@ namespace WebAuthenticationBackend.Controllers
 
         //[Authorize]
         [HttpPost("login")]
-        public async Task<IActionResult> LoginAsync([FromBody] LoginRequest request)
+        public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
-            var user = await _context.Users
-                .FirstOrDefaultAsync(u => u.Email == request.Email);
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+            if (user == null || HashingService.ComputeHash(request.Password, user.Salt) != user.Hash)
+                return Unauthorized("Invalid credentials.");
 
-            if (user == null)
-                return Unauthorized("Invalid email or password.");
+            // 1. Generate short-lived Access Token (JWT)
+            var accessToken = GenerateJwt(user.Email);
 
-            var hash = HashingService.ComputeHash(request.Password, user.Salt);
-            if (hash != user.Hash)
-                return Unauthorized("Invalid email or password.");
+            // 2. Generate long-lived Refresh Token
+            var refreshToken = Guid.NewGuid().ToString();
 
-            // Generate the token using your updated method
-            var token = GenerateJwt(user.Email);
-
-            // Return a JSON object so React can read 'accessToken'
-            return Ok(new
+            // 3. Save Refresh Token to DB
+            var rtEntry = new RefreshToken
             {
-                accessToken = token,
-                email = user.Email
-            });
+                Token = refreshToken,
+                ExpiryDate = DateTime.UtcNow.AddDays(7),
+                UserId = user.Id,
+            };
+            _context.RefreshTokens.Add(rtEntry);
+            await _context.SaveChangesAsync();
+
+            // 4. Send Refresh Token in Cookie, Access Token in JSON
+            SetRefreshToken(refreshToken);
+
+            return Ok(new { accessToken });
+        }
+
+        [HttpGet("refresh")]
+        public async Task<IActionResult> Refresh()
+        {
+            var refreshToken = Request.Cookies["refreshToken"];
+
+            if (string.IsNullOrEmpty(refreshToken)) return Unauthorized();
+
+            var storedToken = await _context.RefreshTokens
+                .Include(t => t.User) // This works now!
+                .FirstOrDefaultAsync(t => t.Token == refreshToken);
+
+            if (storedToken == null || storedToken.ExpiryDate < DateTime.UtcNow)
+                return Unauthorized("Session expired.");
+
+            // Generate a new JWT using the Email from the linked User object
+            var newAccessToken = GenerateJwt(storedToken.User.Email);
+
+            return Ok(new { accessToken = newAccessToken });
         }
 
         private string GenerateJwt(string email)
@@ -267,6 +221,18 @@ namespace WebAuthenticationBackend.Controllers
                 signingCredentials: creds);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        private void SetRefreshToken(string token)
+        {
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = true,        // Prevents JS access (XSS protection)
+                Secure = true,          // Only sent over HTTPS
+                SameSite = SameSiteMode.None, // Required for cross-origin (React on 5173)
+                Expires = DateTime.UtcNow.AddDays(7)
+            };
+            Response.Cookies.Append("refreshToken", token, cookieOptions);
         }
     }
 }

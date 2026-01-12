@@ -3,7 +3,6 @@ import AuthContext from "./context/AuthProvider";
 import axios from './api/axios';
 import { Link } from 'react-router-dom';
 
-// Matches the endpoint shown in your Postman screenshot
 const LOGIN_URL = '/Auth/login';
 
 const Login = () => {
@@ -15,59 +14,54 @@ const Login = () => {
     const [pwd, setPwd] = useState('');
     const [errMsg, setErrMsg] = useState('');
     const [success, setSuccess] = useState(false);
+    
+    // NEW: Loading state
+    const [isLoading, setIsLoading] = useState(false);
 
-    // Focus on the first input on load
     useEffect(() => {
         userRef.current.focus();
     }, [])
 
-    // Clear error messages when user types
     useEffect(() => {
         setErrMsg('');
     }, [email, pwd])
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setIsLoading(true); // Start loading
 
         try {
             const response = await axios.post(LOGIN_URL,
-                // Matches your C# LoginRequest model keys
                 { 
                     Email: email, 
                     Password: pwd 
                 },
                 {
                     headers: { 'Content-Type': 'application/json' },
-                    withCredentials: true
+                    withCredentials: true 
                 }
             );
 
-            /* The backend now returns a JSON object like:
-               { accessToken: "ey...", email: "user@example.com" }
-            */
             const accessToken = response?.data?.accessToken;
-            
-            // Save to AuthContext
             setAuth({ email, accessToken });
             
-            // Clear inputs and show success
             setEmail('');
             setPwd('');
             setSuccess(true);
         } catch (err) {
-    console.log("Full Error Object:", err); // ADD THIS TO SEE THE CULPRIT
-
-    if (!err?.response) {
-        setErrMsg('No Server Response - Check if a browser extension is intercepting the call.');
-    } else if (err.response?.status === 400) {
-        setErrMsg('Missing Email or Password');
-    } else if (err.response?.status === 401) {
-        setErrMsg(err.response.data || 'Unauthorized');
-    } else {
-        setErrMsg('Login Failed');
-    }
-    errRef.current.focus();
-}
+            if (!err?.response) {
+                setErrMsg('No Server Response');
+            } else if (err.response?.status === 400) {
+                setErrMsg('Missing Email or Password');
+            } else if (err.response?.status === 401) {
+                setErrMsg('Unauthorized: Invalid Email or Password');
+            } else {
+                setErrMsg('Login Failed');
+            }
+            errRef.current.focus();
+        } finally {
+            setIsLoading(false); // End loading regardless of success/fail
+        }
     }
 
     return (
@@ -77,7 +71,7 @@ const Login = () => {
                     <h1>You are logged in!</h1>
                     <br />
                     <p>
-                        <a href="#">Go to Home</a>
+                        <Link to="/">Go to Home</Link>
                     </p>
                 </section>
             ) : (
@@ -101,6 +95,7 @@ const Login = () => {
                             onChange={(e) => setEmail(e.target.value)}
                             value={email}
                             required
+                            disabled={isLoading} // Disable input while loading
                         />
 
                         <label htmlFor="password">Password:</label>
@@ -110,9 +105,13 @@ const Login = () => {
                             onChange={(e) => setPwd(e.target.value)}
                             value={pwd}
                             required
+                            disabled={isLoading} // Disable input while loading
                         />
                         
-                        <button>Sign In</button>
+                        {/* Button changes appearance based on loading state */}
+                        <button disabled={isLoading}>
+                            {isLoading ? "Signing In..." : "Sign In"}
+                        </button>
                     </form>
 
                     <p>
